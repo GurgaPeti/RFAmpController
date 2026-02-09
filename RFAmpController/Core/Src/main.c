@@ -61,6 +61,101 @@ void MX_USB_HOST_Process(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+extern USBH_HandleTypeDef hUsbHostFS;
+extern ApplicationTypeDef Appli_state;
+CDC_LineCodingTypeDef LineCoding;
+
+const uint16_t chnum=64;
+uint8_t CDC_RX_Buffer[5]={0};
+uint8_t CDC_TX_Buffer[64];
+uint8_t usbresult;
+uint8_t sendresult;
+uint16_t j =0;
+uint8_t CDC_RX_Buffer_Compare[64];
+char CDC_RX_Data[2048];
+bool flag=0;
+
+
+
+
+typedef enum {
+  CDC_STATE_IDLE = 0,
+  CDC_SEND,
+  CDC_RECEIVE,
+}CDC_StateTypedef;
+
+CDC_StateTypedef CDC_STATE = CDC_STATE_IDLE;
+
+uint8_t i=0;
+
+uint8_t int_to_bcd(uint8_t value)
+{
+    return ((value / 10) << 4) | (value % 10);
+}
+int bcd_to_int(uint8_t bcd)
+{
+    return ((bcd >> 4) * 10) + (bcd & 0x0F);
+}
+
+void CDC_HANDLE (void)
+{
+
+	switch (CDC_STATE)
+	{
+	case CDC_STATE_IDLE:
+	{
+		  USBH_CDC_Stop(&hUsbHostFS);
+		  if (flag==1){
+			  CDC_STATE = CDC_SEND;
+		//  }else{
+		//	  CDC_STATE = CDC_RECEIVE;
+		  }
+
+HAL_Delay(500);
+		  break;
+	}
+
+	case CDC_RECEIVE:
+	{
+		  USBH_CDC_Stop(&hUsbHostFS);
+		  usbresult = USBH_CDC_Receive(&hUsbHostFS, (uint8_t *) CDC_RX_Buffer, 5);
+		  uint8_t INT[5];
+		  char buf[10];
+		  for(int p=0;p<5;p++){
+		  INT[p]=bcd_to_int(CDC_RX_Buffer[p]);//konvertálás
+		  }
+		  sprintf(buf, " %d%d%d%d\r\n", INT[0],INT[1],INT[2],INT[3]);//itt elhagyjuk a 3-ast és szépen összefűzzük a bullshit számokat egybe
+		  int number = atoi(buf);//ez lesz amiből feltételt képzünk, és itt már egy számunk van ami a freki
+//		  HAL_UART_Transmit(&huart3,(uint8_t *)buf, strlen(buf), 100);// ki a pc felé
+		  if (flag==1){
+			  CDC_STATE = CDC_SEND;
+		  }else{
+			  CDC_STATE = CDC_STATE_IDLE;
+		  }
+
+		  break;
+	}
+	case CDC_SEND:
+	{
+		USBH_CDC_Stop(&hUsbHostFS);
+		HAL_Delay (500);
+	//	int len = sprintf ((char *)CDC_TX_Buffer, "data\r");
+	//	USBH_CDC_Transmit (&hUsbHostFS, CDC_TX_Buffer, len);
+		CDC_TX_Buffer[0]=0;
+		CDC_TX_Buffer[1]=0;
+		CDC_TX_Buffer[2]=0;
+		CDC_TX_Buffer[3]=0;
+		CDC_TX_Buffer[4]=3;
+		USBH_CDC_Transmit (&hUsbHostFS, CDC_TX_Buffer, 5);
+		HAL_Delay (100);
+	//	for (j=0; j<64; j++){CDC_RX_Buffer[j]=0;}
+		CDC_STATE = CDC_RECEIVE;
+		flag=0;
+	default:
+		break;
+	}
+	}
+}
 
 /* USER CODE END 0 */
 
@@ -95,7 +190,15 @@ int main(void)
   MX_GPIO_Init();
   MX_USB_HOST_Init();
   /* USER CODE BEGIN 2 */
-
+  printf("Hello ITM \n");
+//   HAL_GPIO_WritePin(GPIOG, GPIO_PIN_6, 1); //usb power up
+   USBH_DbgLog("USBH debug alive");
+   LineCoding.b.dwDTERate = 9600;
+   LineCoding.b.bCharFormat = 2;
+   LineCoding.b.bDataBits = 8;
+   LineCoding.b.bParityType = 0;
+   USBH_CDC_SetLineCoding(&hUsbHostFS, &LineCoding);
+   HAL_Delay(100);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -103,7 +206,15 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
+
+	  MX_USB_HOST_Process();//lehet ezt csak a végén kéne, mert ezért van az, hogy a 0.ban 0 kat olvas csak
+	  if (Appli_state == APPLICATION_READY)
+	    {
+	    	CDC_HANDLE();
+	    }
+    /* USER CODE END WHILE */
     MX_USB_HOST_Process();
+
 
     /* USER CODE BEGIN 3 */
   }
@@ -195,7 +306,27 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{//gomb
 
+  if(GPIO_Pin == GPIO_PIN_13) {
+	  flag=1;
+	 // CDC_STATE = CDC_SEND;
+
+
+  }}
+
+__attribute__((weak)) int _write(int file, char *ptr, int len)
+{
+  (void)file;
+  int DataIdx;
+
+  for (DataIdx = 0; DataIdx < len; DataIdx++)
+  {
+    ITM_SendChar(*ptr++);
+  }
+  return len;
+}
 /* USER CODE END 4 */
 
 /**
