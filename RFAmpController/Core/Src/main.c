@@ -131,7 +131,7 @@ HAL_Delay(500);
 			  CDC_STATE = CDC_SEND;
 		  }else{
 			  CDC_STATE = CDC_STATE_IDLE;
-		  }
+		  }//mivanitt?
 
 		  break;
 	}
